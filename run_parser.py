@@ -20,22 +20,20 @@ async def process_link(link, website):
                 price = soup.find('div', class_='supreme-product-card__price-discount-price')
                 raw_prices.append(price)
                 name = soup.find('h1', class_='supreme-product-card__about-title')
-                strip_price = ''.join(symbol if symbol.isdigit() else ' ' for symbol in str(price).split()) if price else 'price not found'
+                strip_price = ''.join(symbol if symbol.isdigit() else ' ' for symbol in str(price).split()).strip() if price else 'price not found'
                 strip_name = name.get_text(strip=True) if name else 'name not found'
-                if strip_price == 'price not found':
-                    print(f'No price for {strip_name} at {item_url}')
-                name_and_price = (strip_price, strip_name)
+                name_and_price = {strip_name: strip_price}
                 prices.append(name_and_price)
             if response_code == 503:
-                print('Retrying in 5 seconds')
-                await asyncio.sleep(5)
+                print('Retrying in 1 second')
+                await asyncio.sleep(1)
                 await process_link(link, website)
 
 
-def run_parser(main_site):
-    parsed = urlparse(main_site)
+def run_parser(main_url):
+    parsed = urlparse(main_url)
     website = f'{parsed.scheme}://{parsed.netloc}'
-    html = requests.get(main_site).text
+    html = requests.get(main_url).text
     soup = BeautifulSoup(html, 'html.parser')
     links = soup.find_all('a', class_='cl-item-link js-cl-item-link js-cl-item-root-link')
 
@@ -46,5 +44,6 @@ def run_parser(main_site):
 
     loop.run_until_complete(asyncio.gather(*tasks))
     loop.close()
-    print(prices)
-    print(len(raw_prices))
+
+    sorted_prices = sorted(prices, key=lambda price: list(price.values())[0])
+    print(sorted_prices)
