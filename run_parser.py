@@ -1,34 +1,50 @@
+import asyncio
+import aiohttp
 import requests
-from LxmlSoup import LxmlSoup
-from urllib.parse import urlparse
+from bs4 import BeautifulSoup
+from urllib.parse import urlparse, urljoin
 
-# avito = 'https://avito.ru/all/kvartiry/prodam-ASgBAgICAUSSA8YQ?context=H4sIAAAAAAAA_0q0MrSqLraysFJKK8rPDUhMT1WyLrYyNLNSKk5NLErOcMsvyg3PTElPLVGyrgUEAAD__xf8iH4tAAAA'
-
-hexlet = 'https://ru.hexlet.io'
-
-
-# <a href="https://sunlight.net/catalog/bracelets_238528.html" class="cl-item-hover-img-wrap-link js-cl-item-link"></a>
+prices = []
+raw_prices = []
 
 
-# def run_parser():
-#     response = requests.get(sunlight).text
-#     print(response)
-#     # , class_=
-#     soup = LxmlSoup(response)
-#     headings = soup.find_all('a')
-#     print(headings)
-#     for heading in headings:
-#         url = heading.get('href')
-#         print(url)
+async def process_link(link, website):
+    item_url = urljoin(website, link.get('href'))
+    print(f'Processing {item_url}')
+    async with aiohttp.ClientSession() as session:
+        async with session.get(item_url) as response:
+            response_code = response.status
+            if response_code == 200:
+                html = await response.text()
+                soup = BeautifulSoup(html, 'html.parser')
+                price = soup.find('div', class_='supreme-product-card__price-discount-price')
+                raw_prices.append(price)
+                name = soup.find('h1', class_='supreme-product-card__about-title')
+                strip_price = ''.join(symbol if symbol.isdigit() else ' ' for symbol in str(price).split()) if price else 'price not found'
+                strip_name = name.get_text(strip=True) if name else 'name not found'
+                if strip_price == 'price not found':
+                    print(f'No price for {strip_name} at {item_url}')
+                name_and_price = (strip_price, strip_name)
+                prices.append(name_and_price)
+            if response_code == 503:
+                print('Retrying in 5 seconds')
+                await asyncio.sleep(5)
+                await process_link(link, website)
+
 
 def run_parser(main_site):
     parsed = urlparse(main_site)
     website = f'{parsed.scheme}://{parsed.netloc}'
     html = requests.get(main_site).text
-    soup = LxmlSoup(html)
-
+    soup = BeautifulSoup(html, 'html.parser')
     links = soup.find_all('a', class_='cl-item-link js-cl-item-link js-cl-item-root-link')
+
+    loop = asyncio.get_event_loop()
+    tasks = []
     for link in links:
-        item_link = website + link.get('href')
-        print(item_link)
-        # run_parser(link.get('href'))
+        tasks.append(process_link(link, website))
+
+    loop.run_until_complete(asyncio.gather(*tasks))
+    loop.close()
+    print(prices)
+    print(len(raw_prices))

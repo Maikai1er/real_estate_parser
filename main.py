@@ -1,4 +1,5 @@
 from run_parser import run_parser
+from run_parser_GPT import run_parser_gpt
 
 
 def main():
