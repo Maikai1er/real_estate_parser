@@ -15,12 +15,15 @@ def get_raw_links_from_page_text(html_page_text, tag, class_):
     return soup.find_all(tag, class_)
 
 
-def get_page_numbers(html_page_text):
+def get_page_links(html_page_text, main_url):
     soup = BeautifulSoup(html_page_text, 'html.parser')
     page_links = soup.find(class_='catalog-noscript-pagination')
     page_numbers = page_links.get_text(' ', strip=True).split()
-    return page_numbers
-
+    page_links = []
+    for page_number in page_numbers:
+        page_link = main_url.replace('5', page_number)
+        page_links.append(page_link)
+    return page_links
 
 async def process_link(link, website):
     item_url = urljoin(website, link.get('href'))
@@ -54,11 +57,8 @@ def run_parser(main_url):
     tasks = []
 
     html_page_text = requests.get(main_url).text
-    page_numbers = get_page_numbers(html_page_text)
-    page_links = []
-    for page_number in page_numbers:
-        page_link = main_url.replace('5', page_number)
-        page_links.append(page_link)
+    page_links = get_page_links(html_page_text, main_url)
+
     print(page_links)
     links = get_raw_links_from_page_text(html_page_text, 'a', 'cl-item-link js-cl-item-link js-cl-item-root-link')
     for link in links:
