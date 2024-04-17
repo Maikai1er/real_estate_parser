@@ -15,12 +15,11 @@ def get_raw_links_from_page_text(html_page_text, tag, class_):
     return soup.find_all(tag, class_)
 
 
-def get_max_page_number(html_page_text):
+def get_page_numbers(html_page_text):
     soup = BeautifulSoup(html_page_text, 'html.parser')
     page_links = soup.find(class_='catalog-noscript-pagination')
     page_numbers = page_links.get_text(' ', strip=True).split()
-    page_numbers = [int(page_number) for page_number in page_numbers]
-    return max(page_numbers)
+    return page_numbers
 
 
 async def process_link(link, website):
@@ -55,9 +54,15 @@ def run_parser(main_url):
     tasks = []
 
     html_page_text = requests.get(main_url).text
-    max_page_number = get_max_page_number(html_page_text)
+    page_numbers = get_page_numbers(html_page_text)
+    page_links = []
+    for page_number in page_numbers:
+        page_link = main_url.replace('5', page_number)
+        page_links.append(page_link)
+    print(page_links)
     links = get_raw_links_from_page_text(html_page_text, 'a', 'cl-item-link js-cl-item-link js-cl-item-root-link')
     for link in links:
+        # print(link)
         tasks.append(process_link(link, website))
 
     loop.run_until_complete(asyncio.gather(*tasks))
