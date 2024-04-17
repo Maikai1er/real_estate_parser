@@ -9,6 +9,8 @@ from urllib.parse import urlparse, urljoin
 prices = []
 raw_prices = []
 
+pages_response_codes = []
+
 
 def get_raw_links_from_page_text(html_page_text, tag, class_):
     soup = BeautifulSoup(html_page_text, 'html.parser')
@@ -25,48 +27,72 @@ def get_page_links(html_page_text, main_url):
         page_links.append(page_link)
     return page_links
 
+
 async def process_link(link, website):
-    item_url = urljoin(website, link.get('href'))
-    # print(f'Processing {item_url}')
+    try:
+        href = link.get('href')
+        # print(website, href)
+        item_url = urljoin(website, href)
+        # print(item_url)
+
+        # print(f'Processing {item_url}')
+        async with aiohttp.ClientSession() as session:
+            async with session.get(item_url) as response:
+                response_code = response.status
+                if response_code == 200:
+                    await asyncio.sleep(1)
+                    print('Processing ' + link.get('href'))
+                    html_page_text = await response.text()
+                    soup = BeautifulSoup(html_page_text, 'html.parser')
+                    price = soup.find_all('div', class_='supreme-product-card__price-discount-price')
+                    name = soup.find('h1', class_='supreme-product-card__about-title')
+                    strip_price = ''.join(symbol if symbol.isdigit() else ' ' for symbol in str(price).split()).strip() if price else 'price not found'
+                    strip_name = name.get_text(strip=True) if name else 'name not found'
+                    name_and_price = {strip_name: strip_price}
+                    prices.append(name_and_price)
+                if response_code == 503:
+                    # print('Retrying in 1 second')
+                    await asyncio.sleep(1)
+                    await process_link(link, website)
+    except aiohttp.client_exceptions.InvalidURL as error:
+        print(error)
+        return
+    except aiohttp.client_exceptions.ClientOSError:
+        print('Client OSError')
+        return
+
+
+async def process_page_link(link, website='https://sunlight.net'):
     async with aiohttp.ClientSession() as session:
-        async with session.get(item_url) as response:
-            response_code = response.status
-            if response_code == 200:
-                html_page_text = await response.text()
-                soup = BeautifulSoup(html_page_text, 'html.parser')
-                price = soup.find_all('div', class_='supreme-product-card__price-discount-price')
-                name = soup.find('h1', class_='supreme-product-card__about-title')
-                strip_price = ''.join(symbol if symbol.isdigit() else ' ' for symbol in str(price).split()).strip() if price else 'price not found'
-                strip_name = name.get_text(strip=True) if name else 'name not found'
-                name_and_price = {strip_name: strip_price}
-                prices.append(name_and_price)
-            if response_code == 503:
-                # print('Retrying in 1 second')
-                await asyncio.sleep(0.5)
-                await process_link(link, website)
+        async with session.get(link) as response:
+            response.code = response.status
+            match response.status:
+                case 200:
+                    html_page_text = await response.text()
+                    items_links = get_raw_links_from_page_text(html_page_text, 'a', 'cl-item-link js-cl-item-link js-cl-item-root-link')
+                    for link in items_links:
+                        await process_link(link, website)
+                case 503:
+                    await asyncio.sleep(1)
+                    await process_page_link(link)
 
 
-def run_parser(main_url):
-    print(main_url)
+async def run_parser(main_url):
     parsed = urlparse(main_url)
-    print(parsed)
     website = f'{parsed.scheme}://{parsed.netloc}'
-    print(website)
 
-    loop = asyncio.get_event_loop()
-    tasks = []
+    async with aiohttp.ClientSession() as session:
+        html_page_response = await session.get(main_url)
+        html_page_text = await html_page_response.text()
+        page_links = get_page_links(html_page_text, main_url)
 
-    html_page_text = requests.get(main_url).text
-    page_links = get_page_links(html_page_text, main_url)
-
-    print(page_links)
-    links = get_raw_links_from_page_text(html_page_text, 'a', 'cl-item-link js-cl-item-link js-cl-item-root-link')
-    for link in links:
-        # print(link)
-        tasks.append(process_link(link, website))
-
-    loop.run_until_complete(asyncio.gather(*tasks))
-    loop.close()
+        tasks = []
+        # links = get_raw_links_from_page_text(html_page_text, 'a', 'cl-item-link js-cl-item-link js-cl-item-root-link')
+        for link in page_links:
+            tasks.append(process_page_link(link, website))
+        await asyncio.gather(*tasks)
 
     print(prices)
-
+    # print(pages_response_codes)
+    # print(len(pages_response_codes))
+    print(len(prices))
